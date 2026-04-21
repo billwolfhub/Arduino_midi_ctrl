@@ -1,42 +1,3 @@
-# Development Sessions
-
-## Session 1 — Bluefruit USB MIDI Setup
-**Date:** April 2026
-
-### Goal
-Get USB MIDI working on the Adafruit Circuit Playground Bluefruit (nRF52840) 
-to send CC messages to RME TotalMix FX.
-
-### Hardware
-- Adafruit Circuit Playground Bluefruit (nRF52840)
-
-### Key Challenges
-- MIDIUSB library is incompatible with nRF52 architecture (AVR/SAMD only)
-- Conflicting TinyUSB libraries: deleted `TinyUSB_MIDI_Device_Arduino` from 
-  Documents/Arduino/libraries
-- Sketch file was empty on disk despite appearing populated in Arduino IDE — 
-  fixed by writing file content via Terminal using `cat >`
-- No USB Stack menu option in Tools — confirmed `-DUSE_TINYUSB` is baked into 
-  nRF52 board package by default, no toggle needed
-
-### Solution
-Used Adafruit TinyUSB + FortySevenEffects MIDI Library combination:
-- `Adafruit_USBD_MIDI usb_midi`
-- `MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI)`
-
-### Final Sketch Behavior
-- Left button gates MIDI transmission
-- Light sensor maps to CC 7 velocity (0–127)
-- Sends to TotalMix FX Main Out fader
-
-### TotalMix FX Configuration
-- Options → Enable MIDI Control
-- Mixer Settings → MIDI tab → Input/Output: Circuit Playground Bluefruit
-- Unchecked Enable Protocol Support (was interfering with plain MIDI CC)
-- Right-click Main Out fader → Learn → moved light sensor to assign CC 7
-
----
-
 ## Session 2 — Teensy 4.0 Port
 **Date:** April 2026
 
@@ -48,7 +9,7 @@ softpot ribbon sensor.
 ### Hardware
 - Teensy 4.0
 - Spectra Symbol 10k linear softpot ribbon sensor
-- 5k pull-down resistor (temporary — 1k on order)
+- 1k pull-down resistor
 
 ### Key Differences from Bluefruit Version
 - No libraries needed — `usbMIDI` is built into Teensyduino
@@ -60,23 +21,84 @@ softpot ribbon sensor.
 - Softpot high end → 3.3V
 - Softpot low end → GND
 - Softpot wiper → A0 (pin 14)
-- 5k pull-down between A0 and GND (1k recommended)
+- 1k pull-down resistor between A0 and GND
 
 ### Key Challenges
-- 5k pull-down causes softpot to float around raw value 590-607 when untouched
-- Noise level of ~15-20 raw units makes stable detection difficult
-- Finger release causes snap to ~590 middle value
-- Software workarounds for floating value were unreliable with 5k resistor
+- Initial attempts used 5k pull-down causing softpot to float around 590 when untouched
+- Resistor was briefly shorting against an adjacent pin causing bad readings
+- 1k pull-down resolved floating — untouched value dropped to ~2
+- Softpot still noisy and mechanically inconsistent — rotary pot on order
 
-### Partial Software Solution
-- 32-sample averaging reduces noise
-- Jump detection (threshold 100) ignores large sudden value changes on release
-- Full solution pending 1k resistor and tactile button arrival
+### Measured Values (with 1k pull-down)
+- Untouched: ~2
+- Low end: ~19
+- High end: ~800
+
+### Final Sketch
+- 32-sample averaging for noise reduction
+- Dead zone below 15 raw to ignore untouched state
+- Jump threshold of 100 to ignore finger release snap
+- `map(raw, 19, 800, 0, 127)` tuned to actual measured range
+- `constrain(0, 127)` to prevent out of range values
 
 ### Pending
-- Replace 5k pull-down with 1k resistor
+- Replace softpot with rotary potentiometer for cleaner stable readings
 - Add tactile momentary button to gate MIDI transmission
-- Retune map() range once proper resistor is in place
+- Retune map() range once rotary pot is connected
+- Remove dead zone logic if rotary pot reads cleanly at rest
 
-### TotalMix FX Configuration
-- Same as Bluefruit version — board appears as different USB MIDI device name
+---
+
+## Session 3 — Rotary Potentiometer
+**Date:** April 2026
+
+### Goal
+Replace the Spectra Symbol softpot with a quality 10k rotary potentiometer
+for cleaner, more stable readings.
+
+### Hardware
+- Teensy 4.0
+- 10k rotary potentiometer
+- No pull-down
+
+---
+
+## Session 4 — Adafruit Trinket M0
+**Date:** April 2026
+
+### Goal
+Port the volume controller to an Adafruit Trinket M0 (SAMD21) as a smaller,
+cheaper alternative to the Teensy 4.0, and add a toggle mute button.
+
+### Hardware
+- Adafruit Trinket M0 (SAMD21)
+- 10k rotary potentiometer
+- Toggle switch (wire to GND for testing)
+
+### Key Differences from Teensy Version
+- Requires TinyUSB + FortySevenEffects MIDI library stack (same as Bluefruit)
+- USB Stack must be set to TinyUSB in Arduino IDE Tools menu
+- No pull-down resistor needed for pot
+
+### Wiring
+| Component | Trinket M0 Pin |
+|-----------|----------------|
+| Pot left leg | GND |
+| Pot right leg | 3.3V |
+| Pot wiper | Pin 3 (A1) |
+| Mute switch | Pin 0 ↔ GND |
+
+### Known Issues
+- Pin 2 (A0) appears damaged on this board — use Pin 3 (A1) instead
+- TinyUSB library controls the onboard NeoPixel for USB status and cannot be easily overridden
+- Red LED on pin 13 used for mute indicator instead
+
+### Measured Values
+- Fully clockwise: ~0
+- Fully counterclockwise: ~1020
+- Center: ~488
+
+### Final Sketch Behavior
+- Pot on pin 3 sends CC 7 on MIDI channel 1
+- Toggle switch on pin 0 toggles mute (sends CC 7 value 0)
+- Red LED on pin 13 ligh
