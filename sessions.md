@@ -102,3 +102,54 @@ cheaper alternative to the Teensy 4.0, and add a toggle mute button.
 - Pot on pin 3 sends CC 7 on MIDI channel 1
 - Toggle switch on pin 0 toggles mute (sends CC 7 value 0)
 - Red LED on pin 13 ligh
+
+
+---
+
+## Session 5 — ANO Rotary Encoder
+**Date:** April 2026
+
+### Goal
+Replace the rotary potentiometer with an Adafruit ANO Rotary Navigator encoder
+for a more compact control surface with built-in buttons.
+
+### Hardware
+- Adafruit Trinket M0 (SAMD21)
+- Adafruit ANO Rotary Navigator encoder with breakout board
+- No pull-down resistors needed
+
+### Wiring
+| ANO Pin | Trinket M0 Pin |
+|---------|----------------|
+| ENCA | Pin 1 |
+| ENCB | Pin 2 |
+| COMA | GND |
+| SW1 (mute button) | Pin 4 |
+| COMB | GND |
+
+### Key Differences from Pot Version
+- Encoder sends relative increments rather than absolute position
+- Volume tracked in software starting at 64 (midpoint)
+- No calibration needed
+- ANO connects directly to digital pins — no I2C/seesaw library needed
+- Pin 2 has damaged analog function but works fine for digital I2C
+
+### Final Sketch Behavior
+- Encoder increments/decrements volume by 10 per detent
+- Volume constrained to 0-127
+- SW1 on pin 4 toggles mute
+- Mute sends CC 7 value 0, unmute restores last volume
+- Red LED on pin 13 lights when muted
+- Encoder read without interrupts for cleaner response
+- 2ms loop delay for responsiveness
+
+### Key Challenges
+- Interrupt-based encoder reading was erratic — switched to polling in loop
+- Debounce tuning needed to balance responsiveness and accuracy
+- SW1 wiring error initially — confirmed pin 4 works correctly
+- TinyUSB still controls NeoPixel — unresolved, left as is
+
+### Pending
+- Consider adding remaining ANO buttons (SW2-SW4) for additional functions
+- Mount in enclosure
+- Investigate NeoPixel control conflict with TinyUSB
