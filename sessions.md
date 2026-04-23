@@ -153,3 +153,119 @@ for a more compact control surface with built-in buttons.
 - Consider adding remaining ANO buttons (SW2-SW4) for additional functions
 - Mount in enclosure
 - Investigate NeoPixel control conflict with TinyUSB
+
+
+---
+
+## Session 6 — ANO Rotary Encoder
+**Date:** April 2026
+
+### Goal
+Replace the rotary potentiometer with an Adafruit ANO Rotary Navigator encoder
+for a more compact control surface with built-in buttons.
+
+### Hardware
+- Adafruit Trinket M0 (SAMD21)
+- Adafruit ANO Rotary Navigator encoder with breakout board
+
+### Wiring
+| ANO Pin | Trinket M0 Pin |
+|---------|----------------|
+| ENCA | Pin 1 |
+| ENCB | Pin 2 |
+| COMA | GND |
+| SW1 (mute button) | Pin 4 |
+| COMB | GND |
+
+### Key Notes
+- ANO connects directly to digital pins — no I2C or special library needed
+- Encoder read by polling in loop rather than interrupts — more stable
+- Volume tracked in software starting at 64 (midpoint)
+- Step size of 10 per detent gives good range coverage
+- Pin 2 has damaged analog function but works fine for digital
+- TinyUSB still controls onboard NeoPixel — unresolved
+
+### Final Sketch Behavior
+- Encoder increments/decrements volume by 10 per detent
+- Volume constrained to 0-127
+- SW1 on pin 4 toggles mute
+- Mute sends CC 7 value 0, unmute restores last volume
+- Red LED on pin 13 lights when muted
+- 2ms loop delay for responsiveness
+
+### Pending
+- Consider adding remaining ANO buttons for additional functions
+- Mount in enclosure
+
+---
+
+---
+
+## Session 7 — Bela Trill Flex
+**Date:** April 2026
+
+### Goal
+Use a Bela Trill Flex capacitive touch sensor as a slider input for
+volume control on Teensy 4.0.
+
+### Hardware
+- Bela Trill Flex Rev C2 with breakout board
+- Teensy 4.0
+- QWIIC/Stemma QT cable
+
+### Wiring (Teensy 4.0)
+| Trill Breakout | Teensy 4.0 Pin |
+|----------------|----------------|
+| SDA | Pin 18 (A4) |
+| SCL | Pin 19 (A5) |
+| VCC | 3.3V |
+| GND | GND |
+
+### Key Challenges
+- Trinket M0 I2C did not detect the Trill at all — switched to Teensy 4.0
+- All channels reading 4095 initially — ribbon cable was inserted upside down
+- CENTROID mode returned no touches — fix from Bela forum required
+  setPrescaler() with delays before and after, plus double updateBaseline()
+  to prevent pad oversaturation
+
+### Fix
+```cpp
+trill.setMode(Trill::CENTROID);
+delay(100);
+trill.setPrescaler(4);
+delay(200);
+trill.updateBaseline();
+delay(200);
+delay(2000);
+trill.updateBaseline();
+```
+
+### Measured Values
+- Low end: 0
+- High end: 3712
+- Center: ~1638
+
+### Final Sketch Behavior
+- Trill Flex slider sends CC 7 on MIDI channel 1
+- Only sends when touch is detected (finger on sensor)
+- Releases cleanly when finger lifted
+- `map(location, 0, 3712, 0, 127)` tuned to actual range
+- Noise threshold of 1 to prevent jitter
+- Very smooth and responsive
+
+### Libraries
+- Trill by Bela
+- usbMIDI built into Teensyduino
+
+### Pending
+- Add mute button
+- Mount in enclosure
+- Consider adding LED indicator
+
+### Trinket M0 Compatibility Test
+- Attempted to use Trill Flex with Trinket M0 after success with Teensy 4.0
+- I2C scanner found no devices at any address
+- Confirmed Trinket M0 I2C is incompatible with Trill Flex
+- Trinket M0 I2C works for other devices but not the Trill Flex
+- Trill Flex requires Teensy 4.0 or similar board with robust I2C implementation
+- Trinket M0 remains the preferred board for pot and encoder versions

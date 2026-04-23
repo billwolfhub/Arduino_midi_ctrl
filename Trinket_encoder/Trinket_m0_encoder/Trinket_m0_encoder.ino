@@ -1,61 +1,44 @@
-#include <Adafruit_TinyUSB.h>
-#include <MIDI.h>
+#include <Wire.h>
+#include <Trill.h>
 
-Adafruit_USBD_MIDI usb_midi;
-MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
-
-const int encA = 1;
-const int encB = 2;
-const int mutePin = 3;
-const int ledPin = 13;
-
-int volume = 64;
-bool muted = false;
-bool lastButtonState = HIGH;
-int lastEncA = HIGH;
-const int step = 10;
+Trill trill;
 
 void setup() {
-  usb_midi.begin();
-  MIDI.begin(MIDI_CHANNEL_OMNI);
-  pinMode(encA, INPUT_PULLUP);
-  pinMode(encB, INPUT_PULLUP);
-  pinMode(mutePin, INPUT_PULLUP);
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);
-  while (!USBDevice.mounted()) delay(1);
+  Serial.begin(9600);
+  while (!Serial);
+  delay(500);
+  
+  int result = trill.setup(Trill::TRILL_FLEX, 0x48);
+  if (result == 0) {
+    Serial.println("Trill Flex found!");
+    trill.setMode(Trill::DIFF);
+    delay(100);
+    trill.updateBaseline();
+    Serial.println("Ready");
+  } else {
+    Serial.print("Not found, error: ");
+    Serial.println(result);
+  }
 }
 
 void loop() {
-  // temporary test - LED mirrors pin 4
-  digitalWrite(ledPin, digitalRead(mutePin) == LOW ? HIGH : LOW);
-
-  int currentA = digitalRead(encA);
-  if (currentA != lastEncA && currentA == LOW) {
-    if (digitalRead(encB) == HIGH) {
-      volume = constrain(volume + step, 0, 127);
-    } else {
-      volume = constrain(volume - step, 0, 127);
+  trill.requestRawData();
+  int maxVal = 0;
+  int maxIdx = 0;
+  int count = 0;
+  while (trill.rawDataAvailable() > 0) {
+    int val = trill.rawDataRead();
+    if (val > maxVal) {
+      maxVal = val;
+      maxIdx = count;
     }
-    if (!muted) {
-      MIDI.sendControlChange(7, volume, 1);
-    }
+    count++;
   }
-  lastEncA = currentA;
-
-  bool buttonState = digitalRead(mutePin);
-  if (buttonState == LOW && lastButtonState == HIGH) {
-    muted = !muted;
-    if (muted) {
-      MIDI.sendControlChange(7, 0, 1);
-      digitalWrite(ledPin, HIGH);
-    } else {
-      MIDI.sendControlChange(7, volume, 1);
-      digitalWrite(ledPin, LOW);
-    }
+  if (maxVal > 100) {  // only print if significant touch
+    Serial.print("Touch at channel: ");
+    Serial.print(maxIdx);
+    Serial.print("  Value: ");
+    Serial.println(maxVal);
   }
-  lastButtonState = buttonState;
-
-  delay(2);
-  MIDI.read();
+  delay(50);
 }
