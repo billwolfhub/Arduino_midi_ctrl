@@ -269,3 +269,38 @@ trill.updateBaseline();
 - Trinket M0 I2C works for other devices but not the Trill Flex
 - Trill Flex requires Teensy 4.0 or similar board with robust I2C implementation
 - Trinket M0 remains the preferred board for pot and encoder versions
+
+---
+
+## Session 8 — Trill Flex Double Tap Mute
+**Date:** April 2026
+
+### Goal
+Add double tap gesture to toggle mute on the Trill Flex + Teensy 4.0 version,
+eliminating the need for a separate mute button.
+
+### Hardware
+- Teensy 4.0
+- Bela Trill Flex Rev C2
+
+### Feature
+- Single slide: controls volume (CC 7)
+- Double tap: toggles mute
+- Mute sends CC 7 value 0
+- Unmute restores volume to pre-mute level
+
+### Key Implementation Details
+- `savedVal` stores volume before muting so it can be restored on unmute
+- `touchStartTime` tracks how long finger is on sensor to distinguish tap from slide
+- `lastTapTime` tracks time between taps to detect double tap window
+
+### Tunable Parameters
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| doubleTapWindow | 400ms | Time allowed between two taps |
+| minTapDuration | 20ms | Minimum touch time to count as tap |
+| maxTapDuration | 300ms | Maximum touch time before considered a slide |
+
+### Notes
+- Volume restored correctly on unmute using savedVal
+- Gesture feels natural and doesn't interfere with normal sliding
