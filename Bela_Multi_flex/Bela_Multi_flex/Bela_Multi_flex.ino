@@ -18,7 +18,7 @@ struct ChannelConfig {
 };
 
 const ChannelConfig CHANNEL_CONFIGS[] = {
-  { 0x48,  7, true  },  // sensor 1 — volume, double tap mutes
+  { 0x48, 13, false  },  // sensor 1 — volume, double tap mutes
   { 0x49, 11, false },  // sensor 2 — expression
   { 0x4A, 12, false },  // sensor 3
 };

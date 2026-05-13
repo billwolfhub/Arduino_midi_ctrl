@@ -304,3 +304,66 @@ eliminating the need for a separate mute button.
 ### Notes
 - Volume restored correctly on unmute using savedVal
 - Gesture feels natural and doesn't interfere with normal sliding
+
+---
+
+## Session 9 — Multi-Sensor Flex Slider (FlexSlider)
+**Date:** May 2026
+
+### Goal
+Refactor the Trill Flex sketch to support multiple sensors (up to 8) in a
+clean, extensible way, and add a 3rd sensor with per-channel double tap mute.
+
+### Hardware
+- Adafruit Trinket M0 (SAMD21)
+- 3× Bela Trill Flex sensors
+- I2C addresses: 0x48, 0x49, 0x4A
+
+### Key Refactor
+Replaced named `ch1`/`ch2` globals with a `CHANNEL_CONFIGS[]` table and
+`channels[]` array. Adding more sensors now requires only adding a row to
+the config table — no other code changes needed.
+
+```cpp
+struct ChannelConfig {
+  uint8_t address;
+  int midiCC;
+  bool doubleTapMute;
+};
+
+const ChannelConfig CHANNEL_CONFIGS[] = {
+  { 0x48,  7, true  },  // sensor 1 — volume, double tap mutes
+  { 0x49, 11, false },  // sensor 2 — expression
+  { 0x4A, 12, false },  // sensor 3
+};
+```
+
+### Per-Channel Double Tap Mute
+Moved `DOUBLE_TAP_MUTE` from a global constant into `ChannelConfig` and
+`TrillChannel` so each sensor can independently enable or disable the
+double tap mute gesture.
+
+### Key Challenges
+- Trinket M0 USB Serial enumeration conflicts with MIDI Monitor app holding
+  the port — must quit MIDI Monitor before uploading or opening Serial Monitor
+- Trinket M0 requires TinyUSB initialized (`while (!USBDevice.mounted())`)
+  before Serial works reliably
+- Double-tap reset required to enter bootloader mode for uploads
+
+### Wiring (Trinket M0)
+| Trill Breakout | Trinket M0 Pin |
+|----------------|----------------|
+| SDA | Pin 0 |
+| SCL | Pin 2 |
+| VCC | 3.3V |
+| GND | GND |
+
+### Final Sketch
+- Saved as `FlexSlider.ino` (not yet in repo — pending move)
+- LED on pin 13 lights when any sensor is touched
+- Each sensor independently sends its assigned CC on MIDI channel 1
+
+### Pending
+- Move FlexSlider.ino into its own repo or subdirectory
+- Confirm I2C address of 3rd sensor (expected 0x4A)
+- Consider web-based config UI (deferred — current config table sufficient)
