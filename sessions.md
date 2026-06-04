@@ -367,3 +367,61 @@ double tap mute gesture.
 - Move FlexSlider.ino into its own repo or subdirectory
 - Confirm I2C address of 3rd sensor (expected 0x4A)
 - Consider web-based config UI (deferred — current config table sufficient)
+
+---
+
+## Session 10 — Auto-Discovery and Address Fallback (FlexSlider)
+**Date:** June 2026
+
+### Goal
+Debug a non-working FlexSlider, fix a silent failure bug in sensor initialization,
+and add auto-discovery so any connected Trill Flex sensors are detected and
+assigned CCs at startup without requiring code changes.
+
+### Debugging
+- Device was appearing in MIDI Monitor as "Trinket M0" and sending MIDI-CI
+  SysEx handshake (TinyUSB stack, not user code) but no CC data
+- Root cause: board was physically unseated and inserted incorrectly in breadboard
+- Secondary issue found in code: `setupChannel()` was `void` and silently ignored
+  sensor initialization failures — if a Trill sensor was missing or at the wrong
+  address, the channel would stay unconfigured and `getNumTouches()` would always
+  return 0 with no indication of the problem
+
+### I2C Wiring Reference (Trinket M0)
+| Signal | Trinket M0 Pin |
+|--------|----------------|
+| SDA    | Pin 4          |
+| SCL    | Pin 3          |
+| VCC    | 3.3V           |
+| GND    | GND            |
+
+- Pull-ups: one pair of 4.7kΩ resistors (SDA→3.3V, SCL→3.3V) shared across all sensors
+- Trill Flex boards do not have onboard pull-ups
+
+### Address Fallback Fix
+`setupChannel()` changed from `void` to `bool`. On failure, the setup loop
+now scans I2C addresses 0x48–0x4F for any unclaimed Trill Flex sensor and
+assigns it to CC 7 (Volume) as a visible fallback in MIDI Monitor.
+
+### Auto-Discovery (Phase 2)
+After initializing all explicitly configured sensors, a discovery pass scans
+remaining unclaimed I2C addresses and assigns them CCs starting at `AUTO_CC_START`
+(default: 20), incrementing for each additional sensor found. Supports up to 8
+sensors total (all valid Trill Flex addresses).
+
+```cpp
+const int AUTO_CC_START = 20;  // first CC assigned to auto-discovered sensors
+const int MAX_CHANNELS  = 8;   // max Trill Flex addresses (0x48–0x4F)
+```
+
+- `activeChannels` replaces compile-time `NUM_CHANNELS` in the main loop
+- Plug in any combination of sensors — configured ones get their assigned CCs,
+  extras get CC 20, 21, 22... in address order
+- No recompile needed when adding sensors
+
+### Pending
+- Proper configuration for sensors beyond the 3 in CHANNEL_CONFIGS
+  (currently get auto-assigned temporary CCs)
+- Consider persisting config (EEPROM or host-side tool) so auto-discovered
+  sensors retain their assignments across power cycles
+
