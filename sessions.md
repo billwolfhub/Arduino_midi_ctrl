@@ -465,3 +465,33 @@ The Square can coexist on the same I2C bus with no conflicts.
   a separate CC (deferred — needs more thought on interaction model)
 - Consider adding double-tap mute to Square
 
+---
+
+## Session 12 — Bela_Flex_plus_Square Testing and CC Confirmation
+**Date:** June 2026
+
+### Goal
+Test and confirm the Trill Square 2D sensor working alongside 3x Trill Flex
+sensors, and establish correct CC assignments.
+
+### Confirmed MIDI Mapping
+| Sensor | Axis | CC | MIDI Monitor Name |
+|--------|------|----|-------------------|
+| Trill Square | X (horizontal) | CC 15 | "Controller 15" |
+| Trill Square | Y (vertical) | CC 11 | "Expression (coarse)" |
+| Trill Flex 0x48 | position | CC 11 | "Expression (coarse)" |
+| Trill Flex 0x49 | position | CC 64 | "Damper Pedal (Sustain)" |
+| Trill Flex 0x4A | position | CC 12 | "Effect Control 1 (coarse)" |
+
+### Notes
+- CC 11 shared between Square Y and Flex 0x48 — intentional by design
+- Initial X CC was set to 13 in config but "Effect Control 2 (coarse)" in
+  MIDI Monitor is CC 12, not CC 13 — caused confusion; confirmed by setting
+  X to CC 15 and verifying "Controller 15" appeared in trace
+- Trill Square address 0x28 confirmed no conflict with Flex range 0x48–0x4F
+- square.active flag working — Square initializes cleanly in Phase 3 of setup
+
+### Repo
+- Saved to Bela_Flex_plus_Square/Bela_Flex_plus_Square.ino
+- Note: folder structure has minor nesting issue (fixed in cleanup commit)
+
