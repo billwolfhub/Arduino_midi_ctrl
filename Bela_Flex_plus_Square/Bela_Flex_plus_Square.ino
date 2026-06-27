@@ -9,24 +9,14 @@ MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
 // ============================================================
 // Timing constants for double-tap mute detection
 // ============================================================
-const unsigned long doubleTapWindow  = 400;  // ms between taps to count as double-tap
-const unsigned long minTapDuration   = 20;   // ms — ignore accidental grazes shorter than this
-const unsigned long maxTapDuration   = 300;  // ms — ignore holds longer than this
+const unsigned long doubleTapWindow  = 400;
+const unsigned long minTapDuration   = 20;
+const unsigned long maxTapDuration   = 300;
 
-// ============================================================
-// CC assigned to the first auto-discovered sensor.
-// Additional discovered sensors get AUTO_CC_START+1, +2, etc.
-// These are temporary until sensors are added to CHANNEL_CONFIGS.
-// ============================================================
 const int AUTO_CC_START = 20;
 
 // ============================================================
-// Sensor configuration table
-// Add or remove rows to change which sensors are explicitly mapped.
-// address:      I2C address set by jumpers on the Trill Flex board
-//               (0x48 = no jumpers, 0x49 = A0, 0x4A = A1, 0x4B = A0+A1, etc.)
-// midiCC:       MIDI CC number to send
-// doubleTapMute: if true, two quick taps mutes/unmutes this sensor
+// Trill Flex sensor configuration table
 // ============================================================
 struct ChannelConfig {
   uint8_t address;
@@ -35,63 +25,98 @@ struct ChannelConfig {
 };
 
 const ChannelConfig CHANNEL_CONFIGS[] = {
-  { 0x48, 11, false },  // sensor 1
-  { 0x49, 64, false },  // sensor 2 — expression
-  { 0x4A, 12, false },  // sensor 3
+  { 0x48, 11, false },
+  { 0x49, 64, false },
+  { 0x4A, 12, false },
 };
 
 const int NUM_CONFIGURED = sizeof(CHANNEL_CONFIGS) / sizeof(CHANNEL_CONFIGS[0]);
-const int MAX_CHANNELS   = 8;  // Trill Flex supports 8 unique I2C addresses (0x48–0x4F)
+const int MAX_CHANNELS   = 8;
 
 // ============================================================
-// Runtime state for each active sensor channel
+// Trill Square configuration
+// address: I2C address (default 0x28, unchanged by jumpers)
+// ccX:     CC sent for horizontal position
+// ccY:     CC sent for vertical position
+// ============================================================
+struct SquareConfig {
+  uint8_t address;
+  int ccX;
+  int ccY;
+};
+
+const SquareConfig SQUARE_CONFIG = { 0x28, 15, 11 };
+
+// ============================================================
+// Runtime state for Flex channels
 // ============================================================
 struct TrillChannel {
   Trill trill;
   int midiCC;
   bool doubleTapMute;
-  int lastVal          = -1;   // last CC value sent (used to suppress duplicate sends)
-  int savedVal         = 64;   // CC value saved when muted, restored on unmute
+  int lastVal          = -1;
+  int savedVal         = 64;
   bool muted           = false;
   bool wasTouching     = false;
-  unsigned long lastTapTime    = 0;  // timestamp of previous tap release (for double-tap)
-  unsigned long touchStartTime = 0;  // timestamp when current touch began
+  unsigned long lastTapTime    = 0;
+  unsigned long touchStartTime = 0;
 };
 
 TrillChannel channels[MAX_CHANNELS];
-int activeChannels = 0;  // how many sensors successfully initialized at runtime
+int activeChannels = 0;
 
 // ============================================================
-// Initialize a single Trill Flex sensor at the given I2C address.
-// Returns true on success, false if nothing responds at that address.
+// Runtime state for the Square sensor
+// ============================================================
+struct SquareChannel {
+  Trill trill;
+  int ccX;
+  int ccY;
+  int lastX = -1;
+  int lastY = -1;
+  bool active = false;
+};
+
+SquareChannel square;
+
+// ============================================================
+// Initialize a Trill Flex sensor
 // ============================================================
 bool setupChannel(TrillChannel &ch, uint8_t address) {
   if (ch.trill.setup(Trill::TRILL_FLEX, address) != 0) return false;
-
-  ch.trill.setMode(Trill::CENTROID);  // report touch position, not raw data
+  ch.trill.setMode(Trill::CENTROID);
   delay(100);
-  ch.trill.setPrescaler(4);           // sensitivity tuning (higher = more sensitive)
+  ch.trill.setPrescaler(4);
   delay(200);
-  ch.trill.updateBaseline();          // calibrate to current resting state
+  ch.trill.updateBaseline();
   delay(200);
   return true;
 }
 
 // ============================================================
-// Scan I2C addresses 0x48–0x4F for any Trill Flex sensor
-// that hasn't already been claimed by another channel.
-// Returns the address if found, 0 if nothing available.
+// Initialize the Trill Square sensor
+// ============================================================
+bool setupSquare(SquareChannel &sq, uint8_t address) {
+  if (sq.trill.setup(Trill::TRILL_SQUARE, address) != 0) return false;
+  sq.trill.setMode(Trill::CENTROID);
+  delay(100);
+  sq.trill.setPrescaler(4);
+  delay(200);
+  sq.trill.updateBaseline();
+  delay(200);
+  return true;
+}
+
+// ============================================================
+// Scan for unclaimed Trill Flex sensors
 // ============================================================
 uint8_t scanForTrill(uint8_t* claimed, int numClaimed) {
   for (uint8_t addr = 0x48; addr <= 0x4F; addr++) {
-    // Skip addresses already in use
     bool skip = false;
     for (int i = 0; i < numClaimed; i++) {
       if (claimed[i] == addr) { skip = true; break; }
     }
     if (skip) continue;
-
-    // Probe the address — endTransmission returns 0 if a device ACKs
     Wire.beginTransmission(addr);
     if (Wire.endTransmission() == 0) return addr;
   }
@@ -99,33 +124,29 @@ uint8_t scanForTrill(uint8_t* claimed, int numClaimed) {
 }
 
 // ============================================================
-// Read one sensor and send MIDI CC if position has changed.
-// Also handles double-tap mute/unmute if enabled for this channel.
+// Process one Flex channel
 // ============================================================
 void processChannel(TrillChannel &ch) {
   ch.trill.read();
   bool touching      = ch.trill.getNumTouches() > 0;
   unsigned long now  = millis();
 
-  // Detect the start of a new touch
   if (touching && !ch.wasTouching) {
     ch.touchStartTime = now;
   }
 
-  // Detect touch release — evaluate for tap/double-tap
   if (!touching && ch.wasTouching) {
     unsigned long touchDuration = now - ch.touchStartTime;
     bool isTap = (touchDuration >= minTapDuration && touchDuration <= maxTapDuration);
 
     if (isTap && ch.doubleTapMute) {
       if (now - ch.lastTapTime < doubleTapWindow) {
-        // Second tap within window — toggle mute
         ch.muted = !ch.muted;
         if (ch.muted) {
           ch.savedVal = ch.lastVal;
-          MIDI.sendControlChange(ch.midiCC, 0, 1);           // send 0 to mute
+          MIDI.sendControlChange(ch.midiCC, 0, 1);
         } else {
-          MIDI.sendControlChange(ch.midiCC, ch.savedVal, 1); // restore saved value
+          MIDI.sendControlChange(ch.midiCC, ch.savedVal, 1);
           ch.lastVal = ch.savedVal;
         }
       }
@@ -135,18 +156,37 @@ void processChannel(TrillChannel &ch) {
 
   ch.wasTouching = touching;
 
-  // Send CC position data while actively touching and not muted
   if (touching && !ch.muted) {
     int location = ch.trill.touchLocation(0);
-    // Map raw sensor range to MIDI 0–127
-    // 3712 is the maximum raw value for Trill Flex in centroid mode
     int val = constrain(map(location, 0, 3712, 0, 127), 0, 127);
-
-    // Only send if value has moved enough to avoid jitter spam
     if (abs(val - ch.lastVal) > 1) {
       MIDI.sendControlChange(ch.midiCC, val, 1);
       ch.lastVal = val;
     }
+  }
+}
+
+// ============================================================
+// Process the Square sensor — sends two CCs (X and Y axes)
+// Raw range for Trill Square in centroid mode is 0–1792
+// ============================================================
+void processSquare(SquareChannel &sq) {
+  sq.trill.read();
+  if (sq.trill.getNumTouches() == 0) return;
+
+  int rawX = sq.trill.touchHorizontalLocation(0);
+  int rawY = sq.trill.touchLocation(0);
+
+  int x = constrain(map(rawX, 0, 1792, 0, 127), 0, 127);
+  int y = constrain(map(rawY, 0, 1792, 0, 127), 0, 127);
+
+  if (abs(x - sq.lastX) > 1) {
+    MIDI.sendControlChange(sq.ccX, x, 1);
+    sq.lastX = x;
+  }
+  if (abs(y - sq.lastY) > 1) {
+    MIDI.sendControlChange(sq.ccY, y, 1);
+    sq.lastY = y;
   }
 }
 
@@ -157,16 +197,14 @@ void setup() {
   TinyUSBDevice.setProductDescriptor("FlexSlider");
   usb_midi.begin();
   MIDI.begin(MIDI_CHANNEL_OMNI);
-  pinMode(13, OUTPUT);  // LED: lights when any sensor is being touched
+  pinMode(13, OUTPUT);
 
-  Wire.begin();  // initialize I2C before any scanning or sensor setup
+  Wire.begin();
 
-  uint8_t claimedAddresses[MAX_CHANNELS] = {};  // track which addresses are in use
+  uint8_t claimedAddresses[MAX_CHANNELS] = {};
   int numClaimed = 0;
 
-  // --- Phase 1: initialize explicitly configured sensors ---
-  // If a configured address isn't found, scan for any available sensor as fallback
-  // and assign it to CC 7 (Volume) so it's visible in MIDI Monitor.
+  // --- Phase 1: initialize explicitly configured Flex sensors ---
   for (int i = 0; i < NUM_CONFIGURED; i++) {
     uint8_t addr = CHANNEL_CONFIGS[i].address;
     claimedAddresses[numClaimed++] = addr;
@@ -175,18 +213,17 @@ void setup() {
     channels[activeChannels].doubleTapMute = CHANNEL_CONFIGS[i].doubleTapMute;
 
     if (!setupChannel(channels[activeChannels], addr)) {
-      // Configured address not responding — try to find any unclaimed sensor
       uint8_t found = scanForTrill(claimedAddresses, numClaimed - 1);
       if (found != 0) {
-        claimedAddresses[numClaimed - 1] = found;  // replace claimed entry with actual address
+        claimedAddresses[numClaimed - 1] = found;
         if (setupChannel(channels[activeChannels], found)) {
-          channels[activeChannels].midiCC        = 7;     // CC 7 = Volume fallback
+          channels[activeChannels].midiCC        = 7;
           channels[activeChannels].doubleTapMute = false;
         } else {
-          continue;  // found address but setup failed — skip this slot
+          continue;
         }
       } else {
-        continue;  // nothing found at all — skip this slot
+        continue;
       }
     }
 
@@ -195,24 +232,19 @@ void setup() {
     activeChannels++;
   }
 
-  // --- Phase 2: discover any remaining unclaimed sensors ---
-  // Sensors not listed in CHANNEL_CONFIGS get auto-assigned CCs
-  // starting at AUTO_CC_START, incrementing for each additional sensor found.
+  // --- Phase 2: discover any remaining unclaimed Flex sensors ---
   int autoCC = AUTO_CC_START;
 
   for (uint8_t scan = 0x48; scan <= 0x4F && activeChannels < MAX_CHANNELS; scan++) {
-    // Skip already claimed addresses
     bool skip = false;
     for (int c = 0; c < numClaimed; c++) {
       if (claimedAddresses[c] == scan) { skip = true; break; }
     }
     if (skip) continue;
 
-    // Check if anything is present at this address
     Wire.beginTransmission(scan);
     if (Wire.endTransmission() != 0) continue;
 
-    // Found one — initialize and assign next available auto CC
     channels[activeChannels].midiCC        = autoCC++;
     channels[activeChannels].doubleTapMute = false;
 
@@ -224,7 +256,15 @@ void setup() {
     }
   }
 
-  // Wait until USB MIDI is recognized by the host before entering loop
+  // --- Phase 3: initialize Trill Square ---
+  square.ccX = SQUARE_CONFIG.ccX;
+  square.ccY = SQUARE_CONFIG.ccY;
+  if (setupSquare(square, SQUARE_CONFIG.address)) {
+    delay(2000);
+    square.trill.updateBaseline();
+    square.active = true;
+  }
+
   while (!USBDevice.mounted()) delay(1);
 }
 
@@ -239,9 +279,13 @@ void loop() {
     if (channels[i].trill.getNumTouches() > 0) anyTouch = true;
   }
 
-  // LED on pin 13 lights whenever any sensor is being touched
+  if (square.active) {
+    processSquare(square);
+    if (square.trill.getNumTouches() > 0) anyTouch = true;
+  }
+
   digitalWrite(13, anyTouch ? HIGH : LOW);
 
-  delay(20);      // ~50Hz poll rate — sufficient for smooth MIDI control
-  MIDI.read();    // keep USB MIDI stack happy
+  delay(20);
+  MIDI.read();
 }
