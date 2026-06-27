@@ -45,7 +45,7 @@ struct SquareConfig {
   int ccY;
 };
 
-const SquareConfig SQUARE_CONFIG = { 0x28, 15, 11 };
+const SquareConfig SQUARE_CONFIG = { 0x28, 15, 14 };
 
 // ============================================================
 // Runtime state for Flex channels
@@ -197,8 +197,10 @@ void setup() {
   TinyUSBDevice.setProductDescriptor("FlexSlider");
   usb_midi.begin();
   MIDI.begin(MIDI_CHANNEL_OMNI);
-  pinMode(13, OUTPUT);
 
+  while (!USBDevice.mounted()) delay(1);
+
+  pinMode(13, OUTPUT);
   Wire.begin();
 
   uint8_t claimedAddresses[MAX_CHANNELS] = {};
@@ -264,8 +266,6 @@ void setup() {
     square.trill.updateBaseline();
     square.active = true;
   }
-
-  while (!USBDevice.mounted()) delay(1);
 }
 
 // ============================================================
