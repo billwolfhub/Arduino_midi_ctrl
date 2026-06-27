@@ -425,3 +425,43 @@ const int MAX_CHANNELS  = 8;   // max Trill Flex addresses (0x48–0x4F)
 - Consider persisting config (EEPROM or host-side tool) so auto-discovered
   sensors retain their assignments across power cycles
 
+---
+
+## Session 11 — Trill Square 2D Sensor Addition
+**Date:** June 2026
+
+### Goal
+Add support for a Bela Trill Square 2D capacitive touch sensor alongside
+the existing three Trill Flex sensors, sending independent MIDI CCs for
+X and Y axes.
+
+### Hardware
+- Adafruit Trinket M0 (SAMD21)
+- 3× Bela Trill Flex sensors (0x48, 0x49, 0x4A)
+- 1× Bela Trill Square sensor (default address 0x28)
+
+### No Address Conflict
+Trill Flex uses I2C range 0x48–0x4F; Trill Square uses 0x28–0x2F.
+The Square can coexist on the same I2C bus with no conflicts.
+
+### MIDI Mapping
+| Sensor | Axis | CC |
+|--------|------|----|
+| Trill Square | Y (vertical) | CC 11 (Expression) |
+| Trill Square | X (horizontal) | CC 12 |
+
+### Implementation
+- Added `SquareConfig` and `SquareChannel` structs separate from Flex system
+- `setupSquare()` uses `Trill::TRILL_SQUARE` type
+- `processSquare()` reads both axes:
+  - `touchHorizontalLocation(0)` → X → CC 12
+  - `touchLocation(0)` → Y → CC 11
+  - Raw range 0–1792 for both axes on Trill Square
+- `square.active` flag prevents crash if Square is not connected
+- Phase 3 added to setup() to initialize Square independently of Flex discovery
+
+### Pending
+- Evaluate using X axis to scale/modulate Y CC value rather than sending
+  a separate CC (deferred — needs more thought on interaction model)
+- Consider adding double-tap mute to Square
+
