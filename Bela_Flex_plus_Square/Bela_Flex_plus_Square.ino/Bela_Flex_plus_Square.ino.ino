@@ -45,7 +45,7 @@ struct SquareConfig {
   int ccY;
 };
 
-const SquareConfig SQUARE_CONFIG = { 0x28, 13, 11 };
+const SquareConfig SQUARE_CONFIG = { 0x28, 15, 11 };
 
 // ============================================================
 // Runtime state for Flex channels
