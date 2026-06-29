@@ -467,31 +467,53 @@ The Square can coexist on the same I2C bus with no conflicts.
 
 ---
 
-## Session 12 — Bela_Flex_plus_Square Testing and CC Confirmation
+## Session 12 — Bela_Flex_plus_Square Recovery, USB Fix, and CC Confirmation
 **Date:** June 2026
 
 ### Goal
-Test and confirm the Trill Square 2D sensor working alongside 3x Trill Flex
-sensors, and establish correct CC assignments.
+Recover a missing sketch, fix an unreliable USB startup bug, and confirm
+CC assignments for all sensors.
+
+### File Recovery
+`Bela_Flex_plus_Square.ino` was accidentally deleted by commit `f4f218e`
+("Fix folder structure: remove doubled .ino nesting") — the doubled `.ino.ino`
+file was removed but the correctly-named replacement was never saved.
+Recovered from git history at commit `44512be`.
+
+### CC Assignment Update (Bela_Multi_flex)
+Updated `CHANNEL_CONFIGS` in `Bela_Multi_flex.ino`:
+- Sensor 1: CC 13 → CC 11 (Expression)
+- Sensor 2: CC 11 → CC 64 (Sustain)
+
+### USB Enumeration Race Fix (Bela_Flex_plus_Square)
+**Problem:** `while (!USBDevice.mounted())` was at the end of `setup()`, after
+~8+ seconds of sensor initialization (multiple `delay(2000)` calls). On many
+hosts the USB device times out waiting to enumerate before the board gets there.
+
+**Fix:** Moved the USB mount wait to immediately after `MIDI.begin()`, before
+`Wire.begin()` and all sensor init. The host now sees the USB MIDI device within
+milliseconds of power-up, before any I2C work begins.
+
+```cpp
+usb_midi.begin();
+MIDI.begin(MIDI_CHANNEL_OMNI);
+while (!USBDevice.mounted()) delay(1);  // ← enumerate USB before sensor init
+Wire.begin();
+// ... sensor setup follows
+```
 
 ### Confirmed MIDI Mapping
 | Sensor | Axis | CC | MIDI Monitor Name |
 |--------|------|----|-------------------|
 | Trill Square | X (horizontal) | CC 15 | "Controller 15" |
-| Trill Square | Y (vertical) | CC 11 | "Expression (coarse)" |
-| Trill Flex 0x48 | position | CC 11 | "Expression (coarse)" |
+| Trill Square | Y (vertical) | CC 14 | "Controller 14" |
+| Trill Flex 0x48 | position | CC 21 | "Controller 21" |
 | Trill Flex 0x49 | position | CC 64 | "Damper Pedal (Sustain)" |
-| Trill Flex 0x4A | position | CC 12 | "Effect Control 1 (coarse)" |
+| Trill Flex 0x4A | position | CC 22 | "Controller 22" |
 
 ### Notes
-- CC 11 shared between Square Y and Flex 0x48 — intentional by design
-- Initial X CC was set to 13 in config but "Effect Control 2 (coarse)" in
-  MIDI Monitor is CC 12, not CC 13 — caused confusion; confirmed by setting
-  X to CC 15 and verifying "Controller 15" appeared in trace
 - Trill Square address 0x28 confirmed no conflict with Flex range 0x48–0x4F
-- square.active flag working — Square initializes cleanly in Phase 3 of setup
+- `square.active` flag working — Square initializes cleanly in Phase 3 of setup
+- Repo saved to `Bela_Flex_plus_Square/Bela_Flex_plus_Square.ino`
 
-### Repo
-- Saved to Bela_Flex_plus_Square/Bela_Flex_plus_Square.ino
-- Note: folder structure has minor nesting issue (fixed in cleanup commit)
 
