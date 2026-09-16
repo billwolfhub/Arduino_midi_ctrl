@@ -516,4 +516,64 @@ Wire.begin();
 - `square.active` flag working — Square initializes cleanly in Phase 3 of setup
 - Repo saved to `Bela_Flex_plus_Square/Bela_Flex_plus_Square.ino`
 
+---
+
+## Session 13 — NeoPixel Light Animations via USB MIDI
+**Date:** September 2026
+
+### Goal
+Drive Circuit Playground Bluefruit NeoPixel animations from Trinket sensor
+touches, using USB MIDI instead of a direct UART link between the boards.
+
+### Approach
+Earlier sessions attempted a UART link from Trinket Pin 4 (PA06/SERCOM1)
+to Bluefruit A6 (Serial1 RX). After resolving SERCOM handler conflicts and
+confirming GPIO on Pin 4 works at 3.3V, the UART approach was abandoned in
+favor of USB MIDI — simpler, no wiring between boards, and more reliable.
+
+### Architecture
+- **Trinket** sends USB MIDI CCs as "FlexSlider" (unchanged)
+- **MidiPipe** (Mac) routes FlexSlider output → Bluefruit MIDI input
+- **Bluefruit** receives USB MIDI CCs via TinyUSB, drives NeoPixels
+
+### Bluefruit Firmware Changes
+Replaced `MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, ...)` with
+TinyUSB MIDI, matching the Trinket pattern:
+
+```cpp
+#include <Adafruit_TinyUSB.h>
+Adafruit_USBD_MIDI usb_midi;
+MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
+```
+
+`usb_midi.begin()` called in `setup()` before `while (!USBDevice.mounted())`.
+
+### NeoPixel Animation
+Each CC channel (21, 22, 64) has an assigned hue center. On CC receive:
+- Hue shifts based on CC value relative to center
+- Spin speed scales with CC value
+- Comet trail effect fades over 1500ms after last event
+
+### Trinket Cleanup
+Removed all UART/SERCOM1 debug code:
+- `wiring_private.h` include removed
+- `Uart Serial2` and `SERCOM1_Handler` removed
+- GPIO blink test removed from `setup()`
+- `Serial2.begin()` / `pinPeripheral()` calls removed
+- `Serial2.write()` calls removed from `sendCC()` and `loop()`
+
+### Key Debugging Notes
+- Constant 4.86V reading on Pin 4 was the adjacent VUSB pad, not Pin 4
+- Pin 4 GPIO confirmed working at 3.31V once correct pad was probed
+- UART signal never reached Bluefruit despite correct SERCOM1 mux logic —
+  root cause not fully isolated; USB MIDI route chosen instead
+
+### Wiring
+No inter-board wiring needed. Both boards connect independently via USB to Mac.
+
+### Pending
+- MidiPipe pipe must be manually configured after each reboot — consider
+  automating with a saved pipe file
+- Evaluate BLE MIDI as an alternative to remove the Mac routing dependency
+
 
